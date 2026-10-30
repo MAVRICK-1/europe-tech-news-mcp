@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "europe-tech-news-mcp"
+version = "0.1.0"
+description = "MCP server that serves top tech news from across Europe via public RSS feeds"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Rishi Mondal" }]
+dependencies = ["mcp>=1.2.0,<2", "httpx>=0.27"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+europe-tech-news-mcp = "europe_tech_news.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/europe_tech_news"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
