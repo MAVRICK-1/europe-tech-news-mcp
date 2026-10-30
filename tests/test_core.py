@@ -101,3 +101,48 @@ def test_table_and_top_ranking():
     assert aggregator.rank_top([b, a])[0][2] is a
     hits = aggregator.filter_articles([a, b], topic="bugs")
     assert hits == [a]
+
+
+async def test_operational_news_prioritizes_platform_risk():
+    aggregator._cache.clear()
+    good = rss(
+        [
+            (
+                "Critical GitLab vulnerability affects Kubernetes delivery",
+                "https://a.eu/gitlab",
+                NOW,
+                "Security patch available for a critical CVE.",
+            ),
+            (
+                "NIS2 compliance rules change",
+                "https://a.eu/nis2",
+                NOW - timedelta(hours=1),
+                "New compliance requirements for operators.",
+            ),
+            ("Celebrity news", "https://a.eu/other", NOW, "Unrelated story."),
+        ]
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=good))
+    ) as client:
+        result = await aggregator.get_operational_news(client=client)
+
+    assert result["count"] == 2
+    assert result["articles"][0]["priority"] == "critical"
+    assert result["articles"][1]["priority"] == "monitor"
+    assert "Why it matters" in result["table"]
+
+
+def test_operational_priority_excludes_generic_critical_news():
+    from europe_tech_news.parser import Article
+
+    generic = Article("Battery needs critical minerals", "https://x.eu/battery", "T", NOW, "Industry news.")
+    assert aggregator._operational_priority(generic) is None
+
+
+def test_operational_priority_excludes_vendor_earnings_without_change_signal():
+    from europe_tech_news.parser import Article
+
+    earnings = Article("AWS reports quarterly earnings", "https://x.eu/aws", "T", NOW, "Cloud revenue increased.")
+    assert aggregator._operational_priority(earnings) is None

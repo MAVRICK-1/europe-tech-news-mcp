@@ -30,6 +30,86 @@ TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "startups": ("startup", "founder", "scaleup", "unicorn", "accelerator"),
 }
 
+OPERATIONAL_PLATFORM_KEYWORDS = (
+    "kubernetes",
+    "k8s",
+    "container",
+    "docker",
+    "helm",
+    "argo cd",
+    "argocd",
+    "gitlab",
+    "github",
+    "linux",
+    "ubuntu",
+    "debian",
+    "red hat",
+    "cilium",
+    "prometheus",
+    "grafana",
+    "cloud",
+    "aws",
+    "azure",
+    "google cloud",
+    "gcp",
+    "hetzner",
+    "ovh",
+    "scaleway",
+    "data centre",
+    "data center",
+)
+
+OPERATIONAL_RISK_KEYWORDS = (
+    "critical",
+    "cve",
+    "vulnerability",
+    "zero-day",
+    "zero day",
+    "exploit",
+    "attack",
+    "attacked",
+    "ransomware",
+    "breach",
+    "outage",
+    "incident",
+    "downtime",
+    "disruption",
+    "failure",
+)
+
+OPERATIONAL_CHANGE_KEYWORDS = (
+    "release",
+    "upgrade",
+    "update",
+    "patch",
+    "deprecat",
+    "end of life",
+    "support",
+    "migration",
+)
+
+OPERATIONAL_SECURITY_TARGET_KEYWORDS = (
+    "php",
+    "ruby",
+    "openssl",
+    "nginx",
+    "apache",
+    "ssh",
+    "vpn",
+    "database",
+    "postgres",
+    "mysql",
+)
+
+OPERATIONAL_COMPLIANCE_KEYWORDS = (
+    "nis2",
+    "dora",
+    "gdpr",
+    "cyber resilience act",
+    "data act",
+    "sovereignty",
+)
+
 EUROPE_RE = re.compile(
     r"(?<!\w)(europe|european|eu|brussels|ai act|dma|dsa|gdpr|uk|britain|british|london|germany|german|"
     r"berlin|france|french|paris|dutch|netherlands|amsterdam|nordic|sweden|swedish|finland|finnish|norway|"
@@ -171,6 +251,82 @@ def to_table(articles: list[Article]) -> str:
             f"| {i} | {_cell(a.title)} | {_cell(a.summary, 200)} | {_cell(a.source)} | {date} | [Read]({a.url}) |"
         )
     return "\n".join(rows)
+
+
+def _matches_keywords(haystack: str, keywords: tuple[str, ...]) -> bool:
+    return any(re.search(rf"(?<!\w){re.escape(keyword)}(?!\w)", haystack) for keyword in keywords)
+
+
+def _operational_priority(article: Article) -> tuple[int, str] | None:
+    haystack = f"{article.title} {article.summary} {' '.join(article.tags)}".lower()
+    platform_match = _matches_keywords(haystack, OPERATIONAL_PLATFORM_KEYWORDS)
+    risk_match = _matches_keywords(haystack, OPERATIONAL_RISK_KEYWORDS)
+    security_target_match = _matches_keywords(haystack, OPERATIONAL_SECURITY_TARGET_KEYWORDS)
+    change_match = _matches_keywords(haystack, OPERATIONAL_CHANGE_KEYWORDS)
+    compliance_match = _matches_keywords(haystack, OPERATIONAL_COMPLIANCE_KEYWORDS)
+
+    if not (compliance_match or (risk_match and (platform_match or security_target_match)) or (platform_match and change_match)):
+        return None
+    if risk_match and (platform_match or security_target_match):
+        return 3, "Potential impact to managed platform availability or security; assess exposure and patch status."
+    if compliance_match:
+        return 1, "European compliance or infrastructure change that may affect customer platform planning."
+    return 1, "Relevant platform, cloud, or infrastructure development to monitor for managed environments."
+
+
+def to_operations_table(items: list[tuple[int, str, Article]]) -> str:
+    """Markdown table for operational news, including priority and relevance."""
+    if not items:
+        return "No operationally relevant stories found."
+    labels = {3: "Critical", 2: "Watch", 1: "Monitor"}
+    rows = [
+        "| # | Priority | Heading | Why it matters | Source | Date | Link |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for i, (priority, reason, article) in enumerate(items, 1):
+        date = article.published.strftime("%Y-%m-%d") if article.published else ""
+        rows.append(
+            f"| {i} | {labels[priority]} | {_cell(article.title)} | {_cell(reason, 140)} | "
+            f"{_cell(article.source)} | {date} | [Read]({article.url}) |"
+        )
+    return "\n".join(rows)
+
+
+async def get_operational_news(
+    *,
+    days: int = 14,
+    limit: int = 10,
+    client: httpx.AsyncClient | None = None,
+) -> dict:
+    """Return European news prioritized for managed-platform operations."""
+    days = max(1, min(days, 30))
+    limit = max(1, min(limit, 50))
+    articles, errors = await fetch_articles(feeds_for("europe"), client)
+    candidates: list[tuple[int, str, Article]] = []
+    for article in filter_articles(articles, days=days):
+        priority = _operational_priority(article)
+        if priority is not None:
+            candidates.append((*priority, article))
+    candidates.sort(
+        key=lambda item: (item[0], item[2].published or datetime.min.replace(tzinfo=timezone.utc)),
+        reverse=True,
+    )
+    selected = candidates[:limit]
+    return {
+        "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "window_days": days,
+        "count": len(selected),
+        "table": to_operations_table(selected),
+        "articles": [
+            {
+                **article.to_dict(),
+                "priority": {3: "critical", 2: "watch", 1: "monitor"}[priority],
+                "why_it_matters": reason,
+            }
+            for priority, reason, article in selected
+        ],
+        "errors": errors,
+    }
 
 
 async def get_top_news(

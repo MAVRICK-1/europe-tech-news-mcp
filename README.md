@@ -8,6 +8,7 @@ An MCP server that gives Claude (or any MCP client) current tech news from acros
 |---|---|
 | `get_top_eu_tech_news` | Ranked top stories (recency, outlet weight, multi-outlet coverage). Returns a ready-made markdown `table` (Heading, Context, Link). |
 | `get_europe_tech_news` | Top recent stories. Filter by `region`, `topic`, `days`, `limit`. |
+| `get_obmondo_operations_news` | Actionable managed-platform news: vulnerabilities, outages, Kubernetes/GitOps/Linux/cloud changes, and EU compliance. Includes priority and why it matters. |
 | `search_europe_tech_news` | Keyword search (e.g. `Mistral`, `Digital Markets Act`, `ASML`). |
 | `get_source_news` | Latest from one outlet (Sifted, Tech.eu, Heise, ...). |
 | `list_sources` | Configured feeds, regions and topics. |
@@ -17,11 +18,70 @@ Topics: `ai`, `funding`, `regulation`, `security`, `cloud`, `bugs` (bugs, crashe
 
 Sources include Tech.eu, EU-Startups, Sifted, The Next Web, Euractiv, Politico Europe, European Commission Digital Strategy, The Register, Computer Weekly, ITPro, BBC, The Guardian, Silicon Republic, Heise, Golem, t3n, Netzpolitik, Maddyness, Silicon.fr, Le Monde Informatique, Computable, Il Sole 24 Ore, Silicon Canals and Nordic9. General outlets are filtered to Europe-related stories. Edit `src/europe_tech_news/feeds.py` to add more.
 
-## Install
+## Prerequisites
+
+- Python 3.10 or later, including `pip` and `venv`
+- Internet access to public RSS/Atom feeds
+- An MCP client, such as GitHub Copilot CLI, Claude Code, Claude Desktop, or
+  Gemini CLI
+
+No API key, account, or database is required. Docker is optional and is only
+needed for the Docker installation.
+
+Check Python before continuing:
 
 ```bash
-pip install git+https://github.com/MAVRICK-1/europe-tech-news-mcp
+python3 --version
 ```
+
+On Windows, use `py --version` and replace `python3` below with `py`.
+
+## Install
+
+### Recommended: isolated Python environment
+
+This keeps the server and its dependencies separate from other Python tools.
+
+```bash
+python3 -m venv ~/.venvs/europe-tech-news
+~/.venvs/europe-tech-news/bin/pip install \
+  git+https://github.com/MAVRICK-1/europe-tech-news-mcp
+```
+
+The MCP executable is then:
+
+```text
+~/.venvs/europe-tech-news/bin/europe-tech-news-mcp
+```
+
+Use its full path in your MCP client configuration. This avoids relying on a
+global `PATH` entry.
+
+### Install from a local checkout
+
+Use this when developing or when you want the server to run uncommitted local
+changes:
+
+```bash
+git clone https://github.com/MAVRICK-1/europe-tech-news-mcp.git
+cd europe-tech-news-mcp
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest
+```
+
+The local executable is `.venv/bin/europe-tech-news-mcp`.
+
+### Global installation
+
+If you deliberately want a global command, install with:
+
+```bash
+python3 -m pip install git+https://github.com/MAVRICK-1/europe-tech-news-mcp
+```
+
+Confirm `europe-tech-news-mcp` is available on your `PATH` before using this
+option in a client configuration.
 
 ### Claude Desktop / Claude Code
 
@@ -29,7 +89,7 @@ pip install git+https://github.com/MAVRICK-1/europe-tech-news-mcp
 {
   "mcpServers": {
     "europe-tech-news": {
-      "command": "europe-tech-news-mcp"
+      "command": "/absolute/path/to/europe-tech-news-mcp"
     }
   }
 }
@@ -43,7 +103,11 @@ claude mcp add europe-tech-news -- europe-tech-news-mcp
 
 ### Docker
 
+Prerequisite: Docker Engine or Docker Desktop is installed and running.
+
 ```bash
+git clone https://github.com/MAVRICK-1/europe-tech-news-mcp.git
+cd europe-tech-news-mcp
 docker build -t europe-tech-news-mcp .
 claude mcp add europe-tech-news -- docker run -i --rm europe-tech-news-mcp
 ```
@@ -52,12 +116,21 @@ claude mcp add europe-tech-news -- docker run -i --rm europe-tech-news-mcp
 
 The server speaks MCP over stdio, so any MCP client works. In every config below, `command` can be an absolute path (for example `/path/to/venv/bin/europe-tech-news-mcp`) if the command is not on your `PATH`.
 
-Good first prompts: "Top EU tech news today", "Latest cloud outages and bugs in Europe", "EU AI regulation news this week". Answers should come back as a table (Heading, Context, Link).
+After adding the server, restart your client if necessary and verify that it
+lists the `europe-tech-news` tools. Good first prompts: "Top EU tech news
+today", "Latest cloud outages and bugs in Europe", "EU AI regulation news this
+week". Answers should come back as a table (Heading, Context, Link).
+
+For an operations briefing, ask: "What is operationally important for Obmondo this week?" The
+`get_obmondo_operations_news` tool ranks security and availability incidents first, then
+platform and compliance developments. It is a triage feed, not a vulnerability scanner: verify
+affected versions and customer exposure against the linked original source before acting.
 
 ### Claude Code
 
 ```bash
-claude mcp add europe-tech-news -- europe-tech-news-mcp
+claude mcp add europe-tech-news -- \
+  /absolute/path/to/europe-tech-news-mcp
 claude mcp list          # should show europe-tech-news as connected
 ```
 
@@ -68,12 +141,19 @@ Run `/mcp add` in the CLI, or add to `~/.copilot/mcp-config.json`:
 ```json
 {
   "mcpServers": {
-    "europe-tech-news": { "type": "local", "command": "europe-tech-news-mcp", "args": [], "tools": ["*"] }
+    "europe-tech-news": {
+      "type": "local",
+      "command": "/absolute/path/to/europe-tech-news-mcp",
+      "args": [],
+      "tools": ["*"]
+    }
   }
 }
 ```
 
-Restart, then check `/mcp`.
+Restart Copilot CLI, run `/mcp` to confirm it is connected, then ask:
+
+> What operational news is critical for a managed Kubernetes platform this week?
 
 ### Gemini CLI
 
@@ -121,8 +201,9 @@ Open the printed URL, then *Tools → List tools* and call `get_top_eu_tech_news
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest
 ```
 
 ## License

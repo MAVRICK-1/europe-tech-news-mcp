@@ -16,7 +16,8 @@ mcp = FastMCP(
         "in results, since some feeds may be unreachable. Present stories to the user as a "
         "markdown table with columns Heading | Context | Link; each result includes a "
         "ready-made `table` field you can show as is. Use topic 'bugs' for bugs/crashes/outages "
-        "and topic 'cloud' for cloud news."
+        "and topic 'cloud' for cloud news. Use get_obmondo_operations_news for actionable "
+        "managed-platform security, availability, infrastructure, and EU compliance news."
     ),
 )
 
@@ -45,6 +46,14 @@ async def get_europe_tech_news(
     days: lookback window, 1-60 (default 7). limit: max stories, 1-50 (default 10).
     """
     return await aggregator.get_news(region=region, topic=topic, days=days, limit=limit)
+
+
+@mcp.tool()
+async def get_obmondo_operations_news(days: int = 14, limit: int = 10) -> dict:
+    """European news prioritized for managed-platform operations: critical vulnerabilities,
+    outages, Kubernetes/GitOps/Linux/cloud changes, and EU compliance. Each result includes
+    a priority and a short explanation of operational relevance. days: 1-30; limit: 1-50."""
+    return await aggregator.get_operational_news(days=days, limit=limit)
 
 
 @mcp.tool()
