@@ -10,7 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from .feeds import Feed, feeds_for
+from .feeds import FEEDS, Feed, feeds_for
 from .parser import Article, parse_feed
 
 USER_AGENT = "europe-tech-news-mcp/0.1 (+https://github.com/MAVRICK-1/europe-tech-news-mcp)"
@@ -22,12 +22,23 @@ TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "funding": ("raises", "raised", "funding", "series a", "series b", "series c", "seed", "round", "investment", "€", "$m"),
     "regulation": ("regulation", "eu ai act", "dma", "dsa", "gdpr", "data act", "commission", "parliament", "antitrust", "fine", "law"),
     "security": ("security", "breach", "ransomware", "vulnerability", "cve", "cyber", "hack"),
-    "cloud": ("cloud", "kubernetes", "open source", "sovereign", "data centre", "data center", "hyperscaler", "devops"),
+    "cloud": ("cloud", "kubernetes", "open source", "sovereign", "data centre", "data center", "hyperscaler", "devops", "aws", "azure", "google cloud", "ovh", "scaleway", "hetzner", "gaia-x"),
+    "bugs": ("bug", "bugs", "crash", "crashes", "crashed", "outage", "down", "glitch", "flaw", "vulnerability", "zero-day", "patch", "exploit", "failure", "disruption", "incident"),
     "semiconductors": ("chip", "semiconductor", "asml", "infineon", "stmicro", "foundry", "nexperia"),
     "fintech": ("fintech", "payments", "bank", "neobank", "revolut", "klarna", "wise"),
     "climate": ("climate", "energy", "cleantech", "battery", "carbon", "solar", "hydrogen"),
     "startups": ("startup", "founder", "scaleup", "unicorn", "accelerator"),
 }
+
+EUROPE_RE = re.compile(
+    r"(?<!\w)(europe|european|eu|brussels|ai act|dma|dsa|gdpr|uk|britain|british|london|germany|german|"
+    r"berlin|france|french|paris|dutch|netherlands|amsterdam|nordic|sweden|swedish|finland|finnish|norway|"
+    r"denmark|danish|spain|spanish|italy|italian|ireland|irish|dublin|poland|polish|swiss|switzerland|"
+    r"ofcom|mistral|asml|spotify|klarna|revolut|sap|nokia|ericsson|siemens|infineon|ovh|scaleway|hetzner|deepl)(?!\w)",
+    re.IGNORECASE,
+)
+
+_STOP = {"the", "a", "an", "to", "of", "in", "for", "and", "on", "with", "is", "as", "at", "by", "from", "its", "new"}
 
 _cache: dict[str, tuple[float, list[Article]]] = {}
 
@@ -51,6 +62,8 @@ async def _fetch_one(client: httpx.AsyncClient, feed: Feed) -> tuple[Feed, list[
         resp.raise_for_status()
         body = resp.content[:MAX_FEED_BYTES]
         articles = parse_feed(body, feed.name)
+        if feed.broad:
+            articles = [a for a in articles if EUROPE_RE.search(f"{a.title} {a.summary}")]
         _cache[feed.url] = (now, articles)
         return feed, articles, None
     except Exception as exc:  # noqa: BLE001 - one bad feed must not break the digest
@@ -116,6 +129,73 @@ def filter_articles(
     return out
 
 
+def _tokens(title: str) -> set[str]:
+    return {w for w in _norm_title(title).split() if len(w) > 2 and w not in _STOP}
+
+
+def rank_top(articles: list[Article], now: datetime | None = None) -> list[tuple[float, int, Article]]:
+    """Rank by recency, outlet weight, Europe relevance and multi-outlet coverage."""
+    now = now or datetime.now(timezone.utc)
+    weights = {f.name: f.weight for f in FEEDS}
+    toks = [_tokens(a.title) for a in articles]
+    scored: list[tuple[float, int, Article]] = []
+    for i, a in enumerate(articles):
+        sources = {a.source}
+        for j, b in enumerate(articles):
+            if i != j and toks[i] and toks[j] and len(toks[i] & toks[j]) / len(toks[i] | toks[j]) >= 0.4:
+                sources.add(b.source)
+        age_h = max(0.0, (now - a.published).total_seconds() / 3600)  # type: ignore[operator]
+        score = 3.0 / (1.0 + age_h / 24) + weights.get(a.source, 1.0) + 1.5 * (len(sources) - 1)
+        if EUROPE_RE.search(a.title):
+            score += 0.5
+        scored.append((score, len(sources), a))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return scored
+
+
+def _cell(text: str, limit: int | None = None) -> str:
+    text = " ".join(text.split()).replace("|", "\\|")
+    if limit and len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
+
+def to_table(articles: list[Article]) -> str:
+    """Markdown table: heading, short context, link."""
+    if not articles:
+        return "No matching stories found."
+    rows = ["| # | Heading | Context | Source | Date | Link |", "|---|---|---|---|---|---|"]
+    for i, a in enumerate(articles, 1):
+        date = a.published.strftime("%Y-%m-%d") if a.published else ""
+        rows.append(
+            f"| {i} | {_cell(a.title)} | {_cell(a.summary, 200)} | {_cell(a.source)} | {date} | [Read]({a.url}) |"
+        )
+    return "\n".join(rows)
+
+
+async def get_top_news(
+    *,
+    region: str | None = None,
+    topic: str | None = None,
+    days: int = 3,
+    limit: int = 10,
+    client: httpx.AsyncClient | None = None,
+) -> dict:
+    days = max(1, min(days, 30))
+    limit = max(1, min(limit, 50))
+    articles, errors = await fetch_articles(feeds_for(region), client)
+    pool = filter_articles(articles, days=days, topic=topic)
+    ranked = rank_top(pool)[:limit]
+    return {
+        "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "window_days": days,
+        "count": len(ranked),
+        "table": to_table([a for _, _, a in ranked]),
+        "articles": [{**a.to_dict(), "covered_by_sources": n} for _, n, a in ranked],
+        "errors": errors,
+    }
+
+
 async def get_news(
     *,
     region: str | None = None,
@@ -138,6 +218,7 @@ async def get_news(
         "window_days": days,
         "feeds_queried": [f.name for f in feeds],
         "count": len(picked),
+        "table": to_table(picked),
         "articles": [a.to_dict() for a in picked],
         "errors": errors,
     }

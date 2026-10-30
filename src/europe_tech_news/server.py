@@ -13,9 +13,20 @@ mcp = FastMCP(
     instructions=(
         "Fetches recent European tech news from public RSS feeds. Summaries are short "
         "snippets; paraphrase them and always link the original article. Check `errors` "
-        "in results, since some feeds may be unreachable."
+        "in results, since some feeds may be unreachable. Present stories to the user as a "
+        "markdown table with columns Heading | Context | Link; each result includes a "
+        "ready-made `table` field you can show as is. Use topic 'bugs' for bugs/crashes/outages "
+        "and topic 'cloud' for cloud news."
     ),
 )
+
+
+@mcp.tool()
+async def get_top_eu_tech_news(region: str = "europe", topic: str | None = None, days: int = 3, limit: int = 10) -> dict:
+    """Biggest European tech stories right now, ranked by recency, outlet weight and how many
+    outlets cover them. Best for daily briefings. topic examples: bugs (bugs/crashes/outages),
+    cloud, ai, funding, regulation. days: 1-30 (default 3)."""
+    return await aggregator.get_top_news(region=region, topic=topic, days=days, limit=limit)
 
 
 @mcp.tool()
@@ -29,8 +40,8 @@ async def get_europe_tech_news(
 
     region: europe, eu, uk, ireland, germany/dach, france, benelux/netherlands,
             nordics/scandinavia, spain/iberia.
-    topic: ai, funding, regulation, security, cloud, semiconductors, fintech,
-           climate, startups (or any free keyword).
+    topic: ai, funding, regulation, security, cloud, bugs (bugs/crashes/outages),
+           semiconductors, fintech, climate, startups (or any free keyword).
     days: lookback window, 1-60 (default 7). limit: max stories, 1-50 (default 10).
     """
     return await aggregator.get_news(region=region, topic=topic, days=days, limit=limit)

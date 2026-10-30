@@ -89,3 +89,15 @@ async def test_get_news_survives_failing_feed():
         res = await aggregator.get_news(region="europe", topic="semiconductors", client=client)
     assert res["count"] == 1
     assert "Sifted" in res["errors"]
+
+
+def test_table_and_top_ranking():
+    from europe_tech_news.parser import Article
+
+    a = Article("EU cloud outage hits | users", "https://x.eu/a", "Tech.eu", NOW, "Big crash.")
+    b = Article("Old unrelated story", "https://x.eu/b", "Sifted", NOW - timedelta(days=5), "meh")
+    table = aggregator.to_table([a])
+    assert "[Read](https://x.eu/a)" in table and "\\|" in table
+    assert aggregator.rank_top([b, a])[0][2] is a
+    hits = aggregator.filter_articles([a, b], topic="bugs")
+    assert hits == [a]
