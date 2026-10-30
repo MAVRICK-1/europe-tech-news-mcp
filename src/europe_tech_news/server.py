@@ -41,7 +41,8 @@ async def get_europe_tech_news(
 
     region: europe, eu, uk, ireland, germany/dach, france, benelux/netherlands,
             nordics/scandinavia, spain/iberia.
-    topic: ai, funding, regulation, security, cloud, bugs (bugs/crashes/outages),
+    topic: ai, funding, regulation, security, cloud, opensource, sovereignty,
+           projects, bugs/outages, opportunities/tenders, all/tech,
            semiconductors, fintech, climate, startups (or any free keyword).
     days: lookback window, 1-60 (default 7). limit: max stories, 1-50 (default 10).
     """

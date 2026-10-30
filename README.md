@@ -14,7 +14,13 @@ An MCP server that gives Claude (or any MCP client) current tech news from acros
 | `list_sources` | Configured feeds, regions and topics. |
 
 Regions: `europe`, `eu`, `uk`, `ireland`, `germany`/`dach`, `france`, `benelux`/`netherlands`, `nordics`/`scandinavia`, `spain`/`iberia`, `italy`.
-Topics: `ai`, `funding`, `regulation`, `security`, `cloud`, `bugs` (bugs, crashes, outages), `semiconductors`, `fintech`, `climate`, `startups`, or any free keyword.
+Topics: `ai`, `funding`, `regulation`, `security`, `cloud`, `opensource`
+(open source, CNCF, and cloud-native projects), `sovereignty` (European digital
+sovereignty and sovereign cloud), `projects` (open-source and CNCF projects),
+`bugs`/`outages` (bugs, vulnerabilities, crashes, and outages),
+`opportunities`/`tenders` (EU procurement, RFPs, and grants),
+`all`/`tech` (all technology-filtered stories), `semiconductors`,
+`fintech`, `climate`, `startups`, or any free keyword.
 
 Sources include Tech.eu, EU-Startups, Sifted, The Next Web, Euractiv, Politico Europe, European Commission Digital Strategy, The Register, Computer Weekly, ITPro, BBC, The Guardian, Silicon Republic, Heise, Golem, t3n, Netzpolitik, Maddyness, Silicon.fr, Le Monde Informatique, Computable, Il Sole 24 Ore, Silicon Canals and Nordic9. General outlets are filtered to Europe-related stories. Edit `src/europe_tech_news/feeds.py` to add more.
 
@@ -119,7 +125,10 @@ The server speaks MCP over stdio, so any MCP client works. In every config below
 After adding the server, restart your client if necessary and verify that it
 lists the `europe-tech-news` tools. Good first prompts: "Top EU tech news
 today", "Latest cloud outages and bugs in Europe", "EU AI regulation news this
-week". Answers should come back as a table (Heading, Context, Link).
+week", "European CNCF and open-source news", or "European digital sovereignty
+news this week". For opportunities, ask for "European technology tenders and
+procurement opportunities". Answers should come back as a table (Heading,
+Context, Link).
 
 For an operations briefing, ask: "What is operationally important for Obmondo this week?" The
 `get_obmondo_operations_news` tool ranks security and availability incidents first, then
@@ -195,6 +204,8 @@ Open the printed URL, then *Tools → List tools* and call `get_top_eu_tech_news
 - Feeds are fetched concurrently with a 10s timeout and cached for 10 minutes.
 - A failing feed never breaks a request. It is reported under `errors` in the result.
 - Results are deduplicated by canonical URL and normalized title, sorted newest first.
+- Every feed is filtered for technology relevance so generic political, trade,
+  and business stories do not appear in technology results.
 - Only `http(s)` links are returned. XML with DTD entity declarations is rejected.
 - Summaries are short snippets. Link back to the original article when you use them.
 

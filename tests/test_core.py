@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from europe_tech_news import aggregator
-from europe_tech_news.feeds import feeds_for
+from europe_tech_news.feeds import Feed, feeds_for
 from europe_tech_news.parser import parse_feed
 
 NOW = datetime.now(timezone.utc)
@@ -67,6 +67,7 @@ def test_filter_window_topic_dedupe():
     assert [a.url for a in out] == ["https://a.eu/3", "https://a.eu/1"]
     assert len(aggregator.filter_articles(arts, days=7, topic="funding")) == 1
     assert aggregator.filter_articles(arts, days=7, topic="ai")[0].title == "EU AI Act delay"
+    assert len(aggregator.filter_articles(arts, days=7, topic="all")) == 2
 
 
 def test_region_selection_includes_pan_european():
@@ -89,6 +90,34 @@ async def test_get_news_survives_failing_feed():
         res = await aggregator.get_news(region="europe", topic="semiconductors", client=client)
     assert res["count"] == 1
     assert "Sifted" in res["errors"]
+
+
+async def test_filters_non_technology_stories_from_all_feeds():
+    feed = Feed(
+        "Policy",
+        "https://policy.example/feed",
+        "eu",
+        ("policy",),
+    )
+    body = rss(
+        [
+            ("EU AI Act update", "https://a.eu/ai", NOW, "New digital rules."),
+            ("CNCF project gets sovereign cloud support", "https://a.eu/cncf", NOW, "Open source platform news."),
+            ("TV shows on digital terrestrial television", "https://a.eu/tv", NOW, "Entertainment roundup."),
+            ("EU cheese trade agreement", "https://a.eu/cheese", NOW, "Agriculture negotiations."),
+        ]
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=body))
+    ) as client:
+        articles, errors = await aggregator.fetch_articles([feed], client)
+
+    assert errors == {}
+    assert [article.title for article in articles] == [
+        "EU AI Act update",
+        "CNCF project gets sovereign cloud support",
+    ]
 
 
 def test_table_and_top_ranking():
@@ -146,3 +175,22 @@ def test_operational_priority_excludes_vendor_earnings_without_change_signal():
 
     earnings = Article("AWS reports quarterly earnings", "https://x.eu/aws", "T", NOW, "Cloud revenue increased.")
     assert aggregator._operational_priority(earnings) is None
+
+
+def test_requested_topic_filters():
+    from europe_tech_news.parser import Article
+
+    articles = [
+        Article("CNCF project releases a Cilium update", "https://x.eu/cncf", "T", NOW, "Cloud native project."),
+        Article("EU cloud tender published", "https://x.eu/tender", "T", NOW, "Public procurement notice."),
+        Article("EU open-source grant announced", "https://x.eu/grant", "T", NOW, "Funding opportunity."),
+        Article("Unrelated headline", "https://x.eu/other", "T", NOW, "No match."),
+    ]
+
+    assert [article.url for article in aggregator.filter_articles(articles, topic="opensource")] == ["https://x.eu/cncf"]
+    assert [article.url for article in aggregator.filter_articles(articles, topic="projects")] == ["https://x.eu/cncf"]
+    assert [article.url for article in aggregator.filter_articles(articles, topic="tenders")] == ["https://x.eu/tender"]
+    assert [article.url for article in aggregator.filter_articles(articles, topic="opportunities")] == [
+        "https://x.eu/tender",
+        "https://x.eu/grant",
+    ]

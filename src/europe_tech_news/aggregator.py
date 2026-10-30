@@ -23,7 +23,15 @@ TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
     "regulation": ("regulation", "eu ai act", "dma", "dsa", "gdpr", "data act", "commission", "parliament", "antitrust", "fine", "law"),
     "security": ("security", "breach", "ransomware", "vulnerability", "cve", "cyber", "hack"),
     "cloud": ("cloud", "kubernetes", "open source", "sovereign", "data centre", "data center", "hyperscaler", "devops", "aws", "azure", "google cloud", "ovh", "scaleway", "hetzner", "gaia-x"),
+    "opensource": ("open source", "opensource", "cncf", "cloud native", "kubernetes", "cilium", "prometheus", "grafana", "helm", "argocd", "argo cd", "flux"),
+    "sovereignty": ("sovereign", "sovereignty", "gaia-x", "european cloud", "data localisation", "data localization"),
     "bugs": ("bug", "bugs", "crash", "crashes", "crashed", "outage", "down", "glitch", "flaw", "vulnerability", "zero-day", "patch", "exploit", "failure", "disruption", "incident"),
+    "outages": ("outage", "outages", "down", "downtime", "disruption", "incident", "failure"),
+    "projects": ("project", "release", "roadmap", "open source", "opensource", "cncf", "cloud native", "kubernetes", "cilium", "prometheus", "grafana", "helm", "argocd", "argo cd", "flux"),
+    "opportunities": ("tender", "procurement", "rfp", "request for proposals", "grant", "funding opportunity", "contract notice"),
+    "tenders": ("tender", "procurement", "rfp", "request for proposals", "contract notice"),
+    "all": (),
+    "tech": (),
     "semiconductors": ("chip", "semiconductor", "asml", "infineon", "stmicro", "foundry", "nexperia"),
     "fintech": ("fintech", "payments", "bank", "neobank", "revolut", "klarna", "wise"),
     "climate": ("climate", "energy", "cleantech", "battery", "carbon", "solar", "hydrogen"),
@@ -118,6 +126,17 @@ EUROPE_RE = re.compile(
     re.IGNORECASE,
 )
 
+TECH_RE = re.compile(
+    r"(?<!\w)(ai|artificial intelligence|algorithm|software|hardware|cloud|cybersecurity|cybercrime|"
+    r"ransomware|vulnerability|cve|data cent(?:er|re)|datacent(?:er|re)|internet|"
+    r"telecom|network|5g|6g|mobile|semiconductor|chip|quantum|kubernetes|linux|open source|"
+    r"space|satellite|gps|platform|technology|technologies|tech|open source|opensource|cncf|cloud native|"
+    r"kubernetes|cilium|prometheus|grafana|helm|argocd|argo cd|flux|sovereign|sovereignty|gaia-x|"
+    r"nis2|dora|gdpr|cyber resilience act|data act|digital markets act|digital services act|dma|dsa|"
+    r"mistral|asml|sap|nokia|ericsson|infineon|ovh|scaleway|hetzner|cryptocurrency|crypto|blockchain)(?!\w)",
+    re.IGNORECASE,
+)
+
 _STOP = {"the", "a", "an", "to", "of", "in", "for", "and", "on", "with", "is", "as", "at", "by", "from", "its", "new"}
 
 _cache: dict[str, tuple[float, list[Article]]] = {}
@@ -144,6 +163,7 @@ async def _fetch_one(client: httpx.AsyncClient, feed: Feed) -> tuple[Feed, list[
         articles = parse_feed(body, feed.name)
         if feed.broad:
             articles = [a for a in articles if EUROPE_RE.search(f"{a.title} {a.summary}")]
+        articles = [a for a in articles if TECH_RE.search(f"{a.title} {a.summary} {' '.join(a.tags)}")]
         _cache[feed.url] = (now, articles)
         return feed, articles, None
     except Exception as exc:  # noqa: BLE001 - one bad feed must not break the digest
@@ -183,8 +203,9 @@ def filter_articles(
 ) -> list[Article]:
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(days=days)
-    keywords = TOPIC_KEYWORDS.get((topic or "").lower(), ()) if topic else ()
-    if topic and not keywords:
+    topic_key = (topic or "").lower()
+    keywords = TOPIC_KEYWORDS.get(topic_key, ()) if topic else ()
+    if topic and not keywords and topic_key not in {"all", "tech"}:
         keywords = (topic.lower(),)
     q = (query or "").lower().strip()
 
